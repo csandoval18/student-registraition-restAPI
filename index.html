@@ -1,0 +1,281 @@
+<html>
+
+<head>
+	<!-- Bootstrap CSS -->
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
+			integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+<style>
+	.form-signin {
+		max-width: 330px;
+		padding: 15px;
+		margin: 0 auto;
+		color: #017572;
+	}
+	</style>
+</head>
+
+<body>
+	<div class="container-fluid">
+		<h2>Semester Planner</h2>
+		<!-- display login form -->
+		<div class="row" style="display: block" id="login-form">
+			<div class="col-sm-12">
+				<form method="" action="" class="form-signin">
+					<h3>Sign in</h3>
+					<div class="row">
+						<div class="col">   
+							<input type = "text" class = "form-control" 
+							name = "username" placeholder = "username" required autofocus id="username"></br>
+							<input type = "password" class = "form-control" name = "password" placeholder = "password" id="password" required>
+						</div>
+					</div>
+					<div class="row" style="margin-top: 20px">
+							<div class="col"> <button class = "btn btn-lg btn-primary btn-block" type = "button" name = "login" onclick="checkLogin()">Login</button></div>
+					</div>
+				</form> 
+			</div>
+		</div>
+			
+		<div style="display: none" id="schedule-container">
+			<!-- dsplay a list of schedules -->
+			<div class="row"  >
+				<div class="col-8">
+					<p>
+						<select name="subject" id="subject" onchange="displayCourses()">
+							<option value="" selected="selected" disabled hidden>-- Select Subject --</option>
+							<option value="COMPSCI">COMPSCI: Computer Science</option>
+							<option value="MATH">MATH: Mathematics</option>
+							<option value="MAGD">MAGD: Media and Game Development</option>
+						</select>
+					</p>
+					<table class="table" id="schedule-list"></table>
+				</div>
+				<div class="col-4">
+					<div id="shoppingcart" style="display: none">
+						<!-- Display semester plan -->
+						<h3>Semester Plan </h3>
+						<table class="table">
+							<thead>
+								<tr>
+									<th>Course</th>
+									<th>Time</th>
+								</tr>
+							</thead>
+							<tbody id="cart-items">
+								<tr>
+									<td colspan='3'>Semester plan is empty</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+<script>
+/* Define global variables */
+let selectedItems = [];
+let scheduleList = [];
+let user;
+// Define URL for the web service
+const apiURL = "http://localhost/A6";
+const columnLabels = ["Course", "Section", "Time", "Location", "Instructor"];
+// hide schedule list table
+document.querySelector("#schedule-container").style.display = "none";
+
+
+function checkLogin() {
+	// Read login information
+	const username = document.querySelector("#username").value;
+	const password = document.querySelector("#password").value; 
+	const data = JSON.stringify({username: username, password: password});
+	// validate data
+  apiAction(`${apiURL}/index.php?action=login/checklogin/`, "POST", data).then(response => {
+    if (response) {
+      console.log(response); // for debugging 
+      const result = JSON.parse(response);
+      if (result == "valid") {
+        document.querySelector("#login-form").style.display = "none";
+        document.querySelector("#schedule-container").style.display = "block";
+        user = username;
+        getSavedPlan(user);
+      } else {
+        alert("Invalid user");
+      }
+    }
+  });
+}
+    
+function displayCourses() {
+	/* This method uses template literals and fat arrow method */
+	// Hide current table
+	document.querySelector("#schedule-List").style.display = "none";
+	// If the subject is empty then return.
+	const subject = document.querySelector('#subject').value;
+	if (subject === "") {
+		return;
+	}
+	apiAction(`${apiURL}/index.php?action=schedule/schedulebysubject/${subject}`, "GET", null).then(response => {
+		if (response) {
+			scheduleList = JSON.parse(response);
+			displayCourseList(scheduleList);
+		}
+	});
+}
+
+function displayCourseList(list) {
+	const tRows = prepareHTMLContent(list);
+	document.querySelector('#schedule-List').innerHTML = tRows;
+	// Display table
+	document.querySelector("#schedule-List").style.display = "block";
+}
+
+
+function addToCart(index, id) {
+	const tmpList = selectedItems.filter(function (item) {
+		return item.id == id;
+	});
+	const selectedSection = scheduleList[index];
+  
+	if (tmpList.length !== 0) {
+		alert(`${selectedSection.subject} ${selectedSection.number} Section ${selectedSection.section} is already added to the plan`);
+		return;
+	}
+	// Create  an object that describes the selected section and then add it to the selectedItems array
+	const selectedSchedule = {
+		id: selectedSection.id, 
+		subject: selectedSection.subject,
+		number: selectedSection.number,
+		section: selectedSection.section,
+		displayTime: selectedSection.displayTime
+	}
+  
+	// validate data
+	const data = JSON.stringify({username: user, sectionid: id});
+  //Add section to db
+  apiAction(`${apiURL}/index.php?action=schedule/saveselectedsection/`, "POST", data).then(response => {
+    if (response) {
+      console.log("response: " + response);
+      const result = JSON.parse(response);
+      if (result == "success") {
+        //Add the object to the selectedItems array
+        selectedItems.push(selectedSchedule);
+        console.log(selectedItems[0].id);
+        displayShoppingCart();
+      } else if (result == "class already in cart") {
+        alert("Class already in cart");
+      }
+    } else {
+      alert("Could not add the selected section to the semester plan");
+    }
+  });
+}
+
+function deleteItem(index) {
+  console.log(selectedItems);
+	// Identify the selected section which is an object
+	const section = selectedItems[index];
+  console.log(section);
+  console.log("section.id: " + section[0]);
+	const data = JSON.stringify({username: user, sectionid: section.id});
+  //Add section to db
+  apiAction(`${apiURL}/index.php?action=schedule/removeselectedsection/`, "POST", data).then(response => {
+    //Remove items from selectedcItems
+    if (response) {
+      console.log("del res: " + response);
+      selectedItems.splice(index, 1);
+      console.log(selectedItems);
+      // Display items in the shopping cart
+      displayShoppingCart();
+      alert(`Removed ${section.subject} ${section.number} Section ${section.section} from the plan`);
+    }
+  });
+}
+
+function getSavedPlan(user) {
+ 	// Read login information
+	const data = JSON.stringify({username: user});
+	// validate data
+  apiAction(`${apiURL}/index.php?action=schedule/semesterplan/`, "POST", data).then(response => {
+    if (response) {
+      const result = JSON.parse(response);
+      console.log(response); // for debugging 
+      selectedItems = result;
+      displayShoppingCart();
+    }
+  }); 
+}
+
+function displayShoppingCart() {
+
+	const max = selectedItems.length;
+	let total = 0;
+	if (max === 0) {
+		// Shopping cart is empty
+		document.querySelector("#cart-items").innerHTML = "<tr><td colspan='3'>Semester plan is empty</td></tr>";
+		document.querySelector("#shoppingcart").style.display = 'none';
+		return;
+	}
+	let sectionInfo = "";
+	for (let i = 0; i < max; i++) {
+		const section = selectedItems[i];  
+		sectionInfo += `<tr><td>${section.subject} ${section.number} section ${section.section}</td>`;
+		sectionInfo += `<td>${section.displayTime}</td>`;
+		sectionInfo += `<td><button class=\"btn btn-danger\" type=\"button\" onclick=\"deleteItem('${i}')\">Remove</button></td></tr>`;
+	}
+	// Update the cart information
+	document.querySelector("#cart-items").innerHTML = sectionInfo;
+	document.querySelector("#shoppingcart").style.display = 'block';
+}
+
+function apiAction(url, method, data) {
+	// If the url is defined then this method returns an instance of the Promise object. 
+	if (url) {
+		const task = new Promise(function (resolve, reject) {
+			const req = new XMLHttpRequest();
+			req.open(method, url);
+			req.send(data);
+			req.onload = function () {
+					req.status === 200 ? resolve(req.response) : reject(Error(req.statusText));
+			}
+			req.onerror = function (e) {
+					reject(Error(`Network Error: ${e}`));
+			}
+		});
+		return task;
+	}
+	return false;
+}
+
+function prepareHTMLContent(list) {
+	if (list.length === 0) {
+		// Empty list
+		return "";
+	}
+	const numItems = columnLabels.length;  // size of the column list
+	let output = "";
+	// Prepare table header
+	output += "<thead><tr>";
+	for (let i = 0; i < numItems; i++) {
+		output += `<th>${columnLabels[i]}</th>`;
+	}
+	output += "</tr></thead>";
+	// Create table body
+	output += "<tbody>";
+	for (let i in list) {
+		const section = list[i]; // object
+		output += "<tr>";
+		output += `<td>${section["subject"]} ${section["number"]} </td>`;
+		output += `<td>${section["section"]}</td>`;
+		output += `<td>${section["displayTime"]}</td>`;
+		output += `<td>${section["location"]}</td>`;
+		output += `<td>${section["instructor"]}</td>`;
+		output += `<td><button type='button' id='p-${i}' onclick='addToCart(${i}, ${section["id"]})'  class='btn btn-primary'>Add</button></td>`;
+		output += "</tr>";
+	}
+	output += "</tbody>";
+	return output;
+}
+</script>
+</html>
